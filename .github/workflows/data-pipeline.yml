@@ -1,4 +1,4 @@
-name: Transit data pipeline
+name: New Jersey accessible-service production
 on:
   workflow_dispatch:
   push:
@@ -8,45 +8,47 @@ permissions:
   contents: write
   actions: read
 jobs:
-  prepare-accessibility:
+  accessible-service:
     runs-on: ubuntu-latest
-    timeout-minutes: 240
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
       - name: Record run
         run: |
-          printf '{"run_id": "%s", "run_attempt": "%s", "sha": "%s", "started_at": "%s", "stage": "prepare_accessibility_v4"}\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$GITHUB_SHA" "$(date -u +%FT%TZ)" > run_state.json
+          printf '{"run_id": "%s", "run_attempt": "%s", "sha": "%s", "started_at": "%s", "stage": "accessible_service_production"}\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$GITHUB_SHA" "$(date -u +%FT%TZ)" > run_state.json
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add run_state.json
-          git commit -m "Record transit pipeline run $GITHUB_RUN_ID" || true
+          git commit -m "Record accessible-service production run $GITHUB_RUN_ID" || true
           git push
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install spatial analysis environment
+      - name: Install geospatial analysis environment
         run: |
           python -m pip install --upgrade pip
           python -m pip install 'numpy<2.1' pandas pyarrow scipy shapely pyproj pyogrio geopandas pyrosm duckdb matplotlib
           python -m pip freeze > requirements-effective.txt
-      - name: Build block, schedule, and network inputs
+      - name: Execute block-scale pedestrian-access and scheduled-service analysis
         env:
           OMP_NUM_THREADS: '4'
-        run: python pipeline/run_prepare_accessibility.py
-      - name: Preserve analysis inputs and reproducibility files
+        run: python pipeline/run_production.py
+      - name: Preserve reproducibility and audit files
         if: always()
         run: |
-          mkdir -p out/reproducibility out/prepared
-          cp pipeline/feed_config.py pipeline/bounded_reach.cpp pipeline/run_prepare_accessibility.py pipeline/prepare_accessibility.py pipeline/aggregate_accessibility.py pipeline/run_aggregate_accessibility.py requirements-effective.txt out/reproducibility/ || true
-          for f in acs_2024_tracts.csv origins_all.parquet origins_connected.parquet stops_snapped.parquet calls_matched.parquet all_trips.parquet reachability.parquet node_xy.npy offsets.bin neighbors.bin weights.bin sources.bin; do
-            test -f "work/full/prepared/$f" && cp "work/full/prepared/$f" out/prepared/
+          mkdir -p out/reproducibility out/prepared-audit
+          cp pipeline/feed_config.py pipeline/bounded_reach.cpp pipeline/prepare_accessibility.py pipeline/run_prepare_accessibility.py pipeline/run_prepare_accessibility_v3.py pipeline/aggregate_accessibility.py pipeline/run_aggregate_accessibility.py pipeline/run_production.py requirements-effective.txt out/reproducibility/ || true
+          for f in acs_2024_tracts.csv origins_all.parquet origins_connected.parquet stops_snapped.parquet calls_matched.parquet all_trips.parquet reachability.parquet blocks_inputs.parquet; do
+            test -f "work/full/prepared/$f" && cp "work/full/prepared/$f" out/prepared-audit/
           done
-          test -f work/full/data/blocks.zip && cp work/full/data/blocks.zip out/prepared/tl_2020_34_tabblock20.zip || true
-          du -sh work/full/* || true
+          python --version > out/python-version.txt || true
+          df -h > out/disk-usage.txt || true
+          free -h > out/memory-usage.txt || true
           find out -maxdepth 3 -type f -printf '%p %s\n' | sort > out/output_manifest.txt
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: nj-accessibility-preparation-v4
+          name: nj-accessible-service-production
           path: out/
           compression-level: 6
+          retention-days: 90
