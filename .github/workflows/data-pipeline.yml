@@ -3,11 +3,24 @@ on:
   push:
     paths:
       - '.github/workflows/data-pipeline.yml'
+      - 'pipeline/**'
   workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+      - name: Record run
+        run: |
+          printf '{"run_id": "%s", "run_attempt": "%s", "sha": "%s", "started_at": "%s"}\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$GITHUB_SHA" "$(date -u +%FT%TZ)" > run_state.json
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add run_state.json
+          git commit -m "Record transit pipeline run $GITHUB_RUN_ID" || true
+          git push
       - name: Download test file
         run: |
           mkdir -p out
