@@ -1,0 +1,96 @@
+name: New Jersey complete accessible-service analysis v2
+on:
+  push:
+    paths:
+      - '.github/workflows/full-service-analysis-v2.yml'
+      - 'pipeline/full_pipeline.part.*'
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+jobs:
+  service-analysis:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      MPLBACKEND: Agg
+      OMP_NUM_THREADS: '4'
+      OPENBLAS_NUM_THREADS: '2'
+      MKL_NUM_THREADS: '2'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Record production run
+        run: |
+          printf '{"run_id":"%s","run_attempt":"%s","sha":"%s","started_at":"%s","stage":"full_service_analysis_v2"}\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$GITHUB_SHA" "$(date -u +%FT%TZ)" > full_service_v2_run_state.json
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git pull --rebase
+          git add full_service_v2_run_state.json
+          git commit -m "Record full service v2 run $GITHUB_RUN_ID" || true
+          git push
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Decode and verify analysis source
+        run: |
+          mkdir -p pipeline/full_analysis
+          cat pipeline/full_pipeline.part.00 pipeline/full_pipeline.part.01 pipeline/full_pipeline.part.02 | base64 --decode > /tmp/full_pipeline.tar.gz
+          echo 'b085883d03d1a3144f4d5cf9b016371f6d3495a0c893c8d07fe138ce9973c60a  /tmp/full_pipeline.tar.gz' | sha256sum -c -
+          tar -xzf /tmp/full_pipeline.tar.gz -C pipeline/full_analysis
+          python -m py_compile pipeline/full_analysis/prepare_inputs.py pipeline/full_analysis/aggregate_outputs.py
+      - name: Install geospatial and schedule environment
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install 'numpy<2.1' pandas scipy requests shapely pyproj pyogrio geopandas pyarrow pyrosm matplotlib
+          python -m pip freeze > requirements-effective.txt
+      - name: Build authoritative statewide ACS tract controls
+        run: |
+          mkdir -p work/data
+          python - <<'PY'
+          import json, requests
+          counties=['001','003','005','007','009','011','013','015','017','019','021','023','025','027','029','031','033','035','037','039','041']
+          header=None; rows=[]
+          for county in counties:
+              r=requests.get('https://api.census.gov/data/2024/acs/acs5',params={'get':'NAME,B01003_001E,B11001_001E','for':'tract:*','in':f'state:34 county:{county}'},timeout=120,headers={'User-Agent':'New-Jersey-Transit-Score-Accessibility/1.0'})
+              r.raise_for_status(); data=r.json()
+              if header is None: header=data[0]
+              elif data[0]!=header: raise RuntimeError('ACS schema changed')
+              rows.extend(data[1:])
+          if len(rows)<2100: raise RuntimeError(f'Incomplete ACS tract response: {len(rows)}')
+          open('work/data/acs_2024_tracts.json','w').write(json.dumps([header]+rows))
+          print('ACS tracts',len(rows))
+          PY
+      - name: Download, validate, and prepare public inputs
+        run: python pipeline/full_analysis/prepare_inputs.py
+      - name: Build network router and calculate reachable stops
+        run: |
+          g++ -O3 -std=c++17 -fopenmp pipeline/full_analysis/router.cpp -o /tmp/router
+          NODE_COUNT=$(cat work/intermediate/node_count.txt)
+          /tmp/router work/intermediate/edges.bin work/intermediate/origins.bin work/intermediate/stops.bin "$NODE_COUNT" 1200 work/intermediate/pairs 4
+          cat work/intermediate/pairs_0.tsv work/intermediate/pairs_1.tsv work/intermediate/pairs_2.tsv work/intermediate/pairs_3.tsv | LC_ALL=C sort --parallel=4 -S 50% -n -k1,1 -k2,2 > work/intermediate/pairs_sorted.tsv
+          wc -l work/intermediate/pairs_sorted.tsv
+      - name: Deduplicate trips and calculate block accessibility
+        run: |
+          g++ -O3 -std=c++17 pipeline/full_analysis/metrics.cpp -o /tmp/metrics
+          STOP_COUNT=$(cat work/intermediate/stop_count.txt)
+          /tmp/metrics work/intermediate/pairs_sorted.tsv work/intermediate/events.bin work/intermediate/trips.bin "$STOP_COUNT" work/intermediate/block_metrics.csv work/intermediate/metrics_qa_pairs.csv
+      - name: Aggregate to tracts, validate, and publish tables
+        run: python pipeline/full_analysis/aggregate_outputs.py
+      - name: Package reproducibility record
+        if: always()
+        run: |
+          mkdir -p out/reproducibility
+          cp pipeline/full_analysis/prepare_inputs.py pipeline/full_analysis/aggregate_outputs.py pipeline/full_analysis/router.cpp pipeline/full_analysis/metrics.cpp out/reproducibility/ || true
+          cp requirements-effective.txt out/reproducibility/ || true
+          printf '%s\n' 'Python 3.11; GNU C++17; OpenMP; representative Tuesday 2026-08-18; representative Saturday 2026-08-22.' > out/reproducibility/ENVIRONMENT.txt
+          find out -type f -print0 | sort -z | xargs -0 sha256sum > out/SHA256SUMS.txt || true
+          find out -type f -printf '%p\t%s\n' | sort > out/output_manifest.tsv || true
+          df -h || true
+          du -sh work out || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nj-transit-accessibility-service-gap-analysis-v2
+          path: out/
+          compression-level: 6
+          retention-days: 7
