@@ -12,9 +12,10 @@ src = src.replace(
     "     calls=calls.merge(meta,on='template_trip_id',how='left')"
 )
 
-# Census APIs require separate state and county geography clauses.
-old_acs = "params={'get':'NAME,B01003_001E,B11001_001E,B08201_002E,B08201_003E,B08301_001E,B08301_010E','for':'tract:*','in':'state:34 county:*'}\n url='https://api.census.gov/data/2024/acs/acs5?'+urllib.parse.urlencode(params)"
-new_acs = "params=[('get','NAME,B01003_001E,B11001_001E,B08201_002E,B08201_003E,B08301_001E,B08301_010E'),('for','tract:*'),('in','state:34'),('in','county:*')]\n url='https://api.census.gov/data/2024/acs/acs5?'+urllib.parse.urlencode(params)"
+# Retrieve ACS tract inputs county by county. This avoids unsupported wildcard
+# geography combinations while preserving exact 2020 tract geography.
+old_acs = "params={'get':'NAME,B01003_001E,B11001_001E,B08201_002E,B08201_003E,B08301_001E,B08301_010E','for':'tract:*','in':'state:34 county:*'}\n url='https://api.census.gov/data/2024/acs/acs5?'+urllib.parse.urlencode(params)\n req=urllib.request.Request(url,headers={'User-Agent':UA})\n with urllib.request.urlopen(req,timeout=180) as r: rows=json.load(r)\n acs=pd.DataFrame(rows[1:],columns=rows[0])"
+new_acs = "acs_frames=[]\n for county_code in [f'{i:03d}' for i in range(1,42,2)]:\n  params=[('get','NAME,B01003_001E,B11001_001E,B08201_002E,B08201_003E,B08301_001E,B08301_010E'),('for','tract:*'),('in','state:34'),('in',f'county:{county_code}')]\n  url='https://api.census.gov/data/2024/acs/acs5?'+urllib.parse.urlencode(params)\n  req=urllib.request.Request(url,headers={'User-Agent':UA})\n  with urllib.request.urlopen(req,timeout=180) as r:\n   payload=r.read().decode('utf-8',errors='replace')\n  try: rows=json.loads(payload)\n  except Exception as e: raise RuntimeError(f'ACS API failed for county {county_code}: {payload[:500]}') from e\n  acs_frames.append(pd.DataFrame(rows[1:],columns=rows[0]))\n acs=pd.concat(acs_frames,ignore_index=True)"
 if old_acs not in src:
     raise RuntimeError('Expected ACS query block was not found in prepare_accessibility.py')
 src = src.replace(old_acs, new_acs)
