@@ -9,25 +9,25 @@ permissions:
   contents: write
   actions: read
 jobs:
-  test:
+  discover:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - name: Record run
         run: |
-          printf '{"run_id": "%s", "run_attempt": "%s", "sha": "%s", "started_at": "%s"}\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$GITHUB_SHA" "$(date -u +%FT%TZ)" > run_state.json
+          printf '{"run_id": "%s", "run_attempt": "%s", "sha": "%s", "started_at": "%s", "stage": "feed_discovery"}\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$GITHUB_SHA" "$(date -u +%FT%TZ)" > run_state.json
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add run_state.json
           git commit -m "Record transit pipeline run $GITHUB_RUN_ID" || true
           git push
-      - name: Download test file
-        run: |
-          mkdir -p out
-          curl -L --fail --retry 3 https://www2.census.gov/geo/docs/maps-data/data/gazetteer/2024_Gazetteer/2024_Gaz_tracts_national.zip -o out/test.zip
-          ls -lh out/test.zip
+      - name: Clone current Mobility Database catalog
+        run: git clone --depth 1 https://github.com/MobilityData/mobility-database-catalogs.git work/mobility-database-catalogs
+      - name: Inspect candidate feeds
+        run: python pipeline/discover_feeds.py
       - uses: actions/upload-artifact@v4
         with:
-          name: transit-data-test
-          path: out/test.zip
-          compression-level: 0
+          name: nj-gtfs-feed-discovery
+          path: out/
+          compression-level: 6
