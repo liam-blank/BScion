@@ -33,7 +33,7 @@ jobs:
           p = Path('pipeline/full_analysis/prepare_inputs.py')
           s = p.read_text()
           old = 'https://api.census.gov/data/2024/acs/acs5?get=NAME,B01003_001E,B11001_001E&for=tract:*&in=state:34'
-          new = old + '&in=county:*'
+          new = 'https://api.census.gov/data/2024/acs/acs5?get=NAME,B01003_001E,B11001_001E&for=tract:*&in=state:34%20county:*'
           if old not in s:
               raise SystemExit('Expected ACS URL not found')
           p.write_text(s.replace(old, new, 1))
@@ -78,4 +78,3 @@ jobs:
           path: out/
           compression-level: 6
           retention-days: 7
-# production run without repository-write side effects
