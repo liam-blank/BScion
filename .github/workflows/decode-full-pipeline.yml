@@ -1,0 +1,22 @@
+name: Decode packaged accessibility analysis
+on:
+  push:
+    paths:
+      - '.github/workflows/decode-full-pipeline.yml'
+  workflow_dispatch:
+jobs:
+  decode:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Decode analysis source
+        run: |
+          mkdir -p out
+          cat pipeline/full_pipeline.part.* | base64 -d | gzip -d > out/full_pipeline.py
+          python -m py_compile out/full_pipeline.py
+          wc -c out/full_pipeline.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: decoded-accessibility-analysis-source
+          path: out/full_pipeline.py
+          compression-level: 6
