@@ -68,3 +68,4 @@ jobs:
           path: out/
           compression-level: 6
           retention-days: 7
+# triggered 2026-08-12 for production run
