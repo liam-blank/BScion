@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   actions: read
 
 jobs:
@@ -25,6 +25,27 @@ jobs:
       PYTHONUNBUFFERED: '1'
     steps:
       - uses: actions/checkout@v4
+
+      - name: Record workflow run
+        run: |
+          python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          state={
+            'run_id': os.environ['GITHUB_RUN_ID'],
+            'run_attempt': os.environ['GITHUB_RUN_ATTEMPT'],
+            'sha': os.environ['GITHUB_SHA'],
+            'branch': os.environ['GITHUB_REF_NAME'],
+            'status': 'running',
+            'started_at': datetime.now(timezone.utc).isoformat(),
+          }
+          open('run_state.json','w').write(json.dumps(state,indent=2))
+          PY
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add run_state.json
+          git commit -m "Record accessible-service workflow run ${GITHUB_RUN_ID}" || true
+          git push origin HEAD:${GITHUB_REF_NAME}
 
       - name: Configure additional memory
         run: |
@@ -88,3 +109,30 @@ jobs:
             New_Jersey_Accessible_Service_Analysis_Data.zip
           compression-level: 6
           retention-days: 14
+
+      - name: Record workflow completion
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          git pull --rebase origin ${GITHUB_REF_NAME} || true
+          python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          try:
+            state=json.load(open('run_state.json'))
+          except Exception:
+            state={}
+          state.update({
+            'run_id': os.environ['GITHUB_RUN_ID'],
+            'run_attempt': os.environ['GITHUB_RUN_ATTEMPT'],
+            'sha': os.environ['GITHUB_SHA'],
+            'branch': os.environ['GITHUB_REF_NAME'],
+            'status': os.environ.get('JOB_STATUS','unknown'),
+            'finished_at': datetime.now(timezone.utc).isoformat(),
+          })
+          open('run_state.json','w').write(json.dumps(state,indent=2))
+          PY
+          git add run_state.json
+          git commit -m "Record accessible-service workflow completion ${GITHUB_RUN_ID}" || true
+          git push origin HEAD:${GITHUB_REF_NAME} || true
