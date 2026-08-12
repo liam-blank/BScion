@@ -47,12 +47,8 @@ jobs:
           git commit -m "Record accessible-service workflow run ${GITHUB_RUN_ID}" || true
           git push origin HEAD:${GITHUB_REF_NAME}
 
-      - name: Configure additional memory
+      - name: Report available memory and storage
         run: |
-          sudo fallocate -l 6G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap /swapfile
-          sudo swapon /swapfile
           free -h
           df -h
 
@@ -65,9 +61,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip wheel setuptools
           python -m pip install \
-            'numpy>=1.26,<3' 'pandas>=2.2,<3' 'scipy>=1.13,<2' \
+            'numpy>=1.26,<2' 'pandas>=2.2,<3' 'scipy>=1.13,<2' \
             'geopandas>=1.0,<2' 'shapely>=2.0,<3' 'pyogrio>=0.10,<1' \
-            'pyarrow>=17,<21' 'pyproj>=3.6,<4' 'pyrosm>=0.6.2,<0.7' \
+            'pyarrow>=17' 'pyproj>=3.6,<4' 'pyrosm==0.13.1' \
             'matplotlib>=3.9,<4'
           python - <<'PY'
           import geopandas, pandas, numpy, scipy, pyrosm, shapely, pyarrow
@@ -82,17 +78,17 @@ jobs:
       - name: Package analysis outputs
         if: always()
         run: |
+          mkdir -p out/service_gap
           python - <<'PY'
           from pathlib import Path
           import hashlib, json
           root=Path('out/service_gap')
           manifest=[]
-          if root.exists():
-            for p in sorted(root.rglob('*')):
-              if p.is_file():
-                h=hashlib.sha256(p.read_bytes()).hexdigest()
-                manifest.append({'file':str(p.relative_to(root)),'bytes':p.stat().st_size,'sha256':h})
-            (root/'artifact_manifest.json').write_text(json.dumps(manifest,indent=2))
+          for p in sorted(root.rglob('*')):
+            if p.is_file():
+              h=hashlib.sha256(p.read_bytes()).hexdigest()
+              manifest.append({'file':str(p.relative_to(root)),'bytes':p.stat().st_size,'sha256':h})
+          (root/'artifact_manifest.json').write_text(json.dumps(manifest,indent=2))
           PY
           cd out
           zip -r -9 ../New_Jersey_Accessible_Service_Analysis_Data.zip service_gap
@@ -108,7 +104,7 @@ jobs:
             out/service_gap/
             New_Jersey_Accessible_Service_Analysis_Data.zip
           compression-level: 6
-          retention-days: 14
+          retention-days: 30
 
       - name: Record workflow completion
         if: always()
