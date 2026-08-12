@@ -1,10 +1,12 @@
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <fstream>
 #include <iostream>
 #include <limits>
 #include <queue>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -12,7 +14,6 @@
 #include <omp.h>
 #endif
 
-struct Pair { uint32_t node; float weight; };
 struct OutRec { uint32_t block; uint32_t source; float distance; };
 
 template <typename T> std::vector<T> read_vec(const std::string& path) {
