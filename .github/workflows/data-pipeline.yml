@@ -9,14 +9,14 @@ permissions:
   contents: write
   actions: read
 jobs:
-  fta-inventory:
+  calendar-inventory:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - name: Record run
         run: |
-          printf '{"run_id": "%s", "run_attempt": "%s", "sha": "%s", "started_at": "%s", "stage": "fta_inventory"}\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$GITHUB_SHA" "$(date -u +%FT%TZ)" > run_state.json
+          printf '{"run_id": "%s", "run_attempt": "%s", "sha": "%s", "started_at": "%s", "stage": "calendar_inventory"}\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$GITHUB_SHA" "$(date -u +%FT%TZ)" > run_state.json
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add run_state.json
@@ -25,10 +25,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Inspect FTA GTFS inventory
-        run: python pipeline/inspect_fta.py
+      - name: Inventory current feed calendars
+        run: python pipeline/calendar_inventory.py
       - uses: actions/upload-artifact@v4
         with:
-          name: fta-gtfs-inventory-inspection
+          name: nj-current-gtfs-calendar-inventory
           path: out/
           compression-level: 6
