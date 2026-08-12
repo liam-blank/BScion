@@ -1,0 +1,70 @@
+name: Debug accessible-service production v9
+on:
+  push:
+    paths:
+      - '.github/workflows/debug-production-v9.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+  actions: read
+jobs:
+  debug-production:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - name: Record run
+        run: |
+          printf '{"run_id":"%s","sha":"%s","started_at":"%s","stage":"debug_production_v9"}\n' "$GITHUB_RUN_ID" "$GITHUB_SHA" "$(date -u +%FT%TZ)" > debug_v9_run_state.json
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add debug_v9_run_state.json
+          git commit -m "Record accessible-service debug v9 run $GITHUB_RUN_ID" || true
+          git push
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install environment
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install 'numpy<2.1' pandas pyarrow scipy shapely pyproj pyogrio geopandas pyrosm duckdb matplotlib requests
+          g++ -O3 -std=c++17 -fopenmp pipeline/bounded_reach.cpp -o pipeline/bounded_reach
+          python -m pip freeze > requirements-effective.txt
+      - name: Run production
+        id: production
+        continue-on-error: true
+        env:
+          OMP_NUM_THREADS: '4'
+        run: |
+          rm -rf debug_results
+          mkdir -p debug_results out/debug
+          set +e
+          python pipeline/run_production.py > debug_results/production.log 2>&1
+          status=$?
+          echo "$status" > debug_results/status.txt
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          tail -n 600 debug_results/production.log > debug_results/production-tail.log
+          find work -maxdepth 5 -type f -printf '%p %s\n' 2>/dev/null | sort > debug_results/work-manifest.txt || true
+          find out -maxdepth 5 -type f -printf '%p %s\n' 2>/dev/null | sort > debug_results/out-manifest.txt || true
+          df -h > debug_results/disk.txt
+          free -h > debug_results/memory.txt
+          cp -r out/* debug_results/output/ 2>/dev/null || true
+          exit 0
+      - name: Commit diagnostics and compact results
+        if: always()
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          find debug_results -type f -size +45M -delete || true
+          git add -f debug_results
+          git commit -m "Publish accessible-service debug v9 diagnostics $GITHUB_RUN_ID" || true
+          git push
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nj-accessible-service-debug-v9
+          path: debug_results/
+          compression-level: 6
+      - name: Fail if production failed
+        if: steps.production.outputs.status != '0'
+        run: exit 1
