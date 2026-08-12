@@ -1,0 +1,22 @@
+name: Inspect NJ PL 94-171
+on:
+  push:
+    branches: [transit-service-gap-production-20260812]
+    paths:
+      - 'pipeline_prod/inspect_pl.py'
+      - '.github/workflows/inspect-pl.yml'
+  workflow_dispatch:
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python pipeline_prod/inspect_pl.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nj-pl-inspection
+          path: pl_inspect_out/inspect.json
