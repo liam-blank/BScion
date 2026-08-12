@@ -1,0 +1,26 @@
+name: Current New Jersey GTFS feed audit
+on:
+  push:
+    paths:
+      - '.github/workflows/service-gap-feed-audit.yml'
+      - 'pipeline/audit_service_feeds.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Audit current feeds
+        run: python pipeline/audit_service_feeds.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: service-gap-feed-audit
+          path: out_feed_audit/
+          compression-level: 6
