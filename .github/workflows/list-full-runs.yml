@@ -1,0 +1,32 @@
+name: List full service analysis runs
+on:
+  push:
+    paths:
+      - '.github/workflows/list-full-runs.yml'
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: write
+jobs:
+  list-runs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: List workflow runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/full-service-analysis.yml/runs?per_page=50" > full_service_runs.json
+          python - <<'PY'
+          import json
+          p='full_service_runs.json'
+          d=json.load(open(p))
+          d={'retrieved_at_run_id':'${{ github.run_id }}','total_count':d.get('total_count'), 'workflow_runs':[{k:r.get(k) for k in ['id','name','event','status','conclusion','workflow_id','head_branch','head_sha','run_number','run_attempt','created_at','updated_at','artifacts_url','jobs_url','html_url']} for r in d.get('workflow_runs',[])]}
+          open(p,'w').write(json.dumps(d,indent=2))
+          PY
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git pull --rebase
+          git add full_service_runs.json
+          git commit -m "List full service analysis runs $GITHUB_RUN_ID" || true
+          git push
