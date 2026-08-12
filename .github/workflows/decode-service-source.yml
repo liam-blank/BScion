@@ -1,0 +1,40 @@
+name: Decode service source
+on:
+  push:
+    branches:
+      - transit-service-gap-production-20260812
+    paths:
+      - '.github/workflows/decode-service-source.yml'
+  workflow_dispatch:
+jobs:
+  decode:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Recover verified source
+        run: |
+          mkdir -p decoded
+          python - <<'PY'
+          from pathlib import Path
+          import base64,gzip,hashlib
+          parts=[Path(f'service_gap/parts/part{i}.txt').read_text().strip() for i in range(4)]
+          payload=''.join(parts)
+          target='aad9e196181487578ab298b2ca934209d28810daa97114e343fa91d3ad169387'
+          for i in range(len(payload)):
+              try:
+                  source=gzip.decompress(base64.b64decode(payload[:i]+payload[i+1:],validate=True))
+              except Exception:
+                  continue
+              if hashlib.sha256(source).hexdigest()==target:
+                  Path('decoded/build_accessible_service_and_gap.py').write_bytes(source)
+                  Path('decoded/recovery.json').write_text(__import__('json').dumps({'repair_index':i,'removed_character':payload[i],'source_bytes':len(source),'sha256':target},indent=2))
+                  break
+          else:
+              raise SystemExit('source recovery failed')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: decoded-service-analysis-source
+          path: decoded/
+          compression-level: 0
+          retention-days: 7
