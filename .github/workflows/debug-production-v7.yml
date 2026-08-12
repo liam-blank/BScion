@@ -1,0 +1,59 @@
+name: Debug accessible-service production v7
+on:
+  push:
+    paths:
+      - '.github/workflows/debug-production-v7.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  debug-production:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install environment
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install 'numpy<2.1' pandas pyarrow scipy shapely pyproj pyogrio geopandas pyrosm duckdb matplotlib requests
+          g++ -O3 -std=c++17 -fopenmp pipeline/bounded_reach.cpp -o pipeline/bounded_reach
+          python -m pip freeze > requirements-effective.txt
+      - name: Run production with captured log
+        id: production
+        continue-on-error: true
+        env:
+          OMP_NUM_THREADS: '4'
+        run: |
+          mkdir -p out/debug
+          set +e
+          python pipeline/run_production.py > out/debug/production.log 2>&1
+          status=$?
+          echo "$status" > out/debug/status.txt
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          find work -maxdepth 4 -type f -printf '%p %s\n' 2>/dev/null | sort > out/debug/work-manifest.txt || true
+          find out -maxdepth 4 -type f -printf '%p %s\n' 2>/dev/null | sort > out/debug/out-manifest.txt || true
+          df -h > out/debug/disk.txt
+          free -h > out/debug/memory.txt
+          tail -n 400 out/debug/production.log > out/debug/production-tail.log
+          exit 0
+      - name: Preserve reproducibility
+        if: always()
+        run: |
+          mkdir -p out/debug/reproducibility
+          cp pipeline/run_production.py pipeline/run_prepare_accessibility.py pipeline/prepare_accessibility.py pipeline/aggregate_accessibility.py pipeline/run_aggregate_accessibility.py pipeline/feed_config.py pipeline/bounded_reach.cpp requirements-effective.txt out/debug/reproducibility/ || true
+          for f in work/full/prepared/*.parquet work/full/prepared/*.csv work/full/prepared/*.npy work/full/prepared/*.bin; do
+            test -f "$f" && cp "$f" out/debug/ || true
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nj-accessible-service-debug-v7
+          path: out/debug/
+          compression-level: 6
+      - name: Fail if production failed
+        if: steps.production.outputs.status != '0'
+        run: exit 1
