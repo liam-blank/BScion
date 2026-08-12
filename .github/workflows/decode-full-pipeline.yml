@@ -9,10 +9,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Decode analysis source
+      - name: Decode and normalize analysis source
         run: |
           mkdir -p out
-          cat pipeline/full_pipeline.part.* | base64 -d | gzip -d > out/full_pipeline.py
+          cat pipeline/full_pipeline.part.* | base64 -d | gzip -d > out/full_pipeline.raw
+          file out/full_pipeline.raw || true
+          xxd -l 96 out/full_pipeline.raw || true
+          python - <<'PY'
+          from pathlib import Path
+          raw=Path('out/full_pipeline.raw').read_bytes()
+          candidates=['utf-8-sig','utf-16','utf-16-le','utf-16-be']
+          for enc in candidates:
+              try:
+                  text=raw.decode(enc)
+                  compile(text,'full_pipeline.py','exec')
+                  Path('out/full_pipeline.py').write_text(text,encoding='utf-8')
+                  print('decoded',enc,'chars',len(text))
+                  break
+              except Exception as e:
+                  print(enc,type(e).__name__,e)
+          else:
+              raise SystemExit('No valid source encoding')
+          PY
           python -m py_compile out/full_pipeline.py
           wc -c out/full_pipeline.py
       - uses: actions/upload-artifact@v4
@@ -20,4 +38,3 @@ jobs:
           name: decoded-accessibility-analysis-source
           path: out/full_pipeline.py
           compression-level: 6
-# refreshed after all three parts were committed
