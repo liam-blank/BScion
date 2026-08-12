@@ -1,0 +1,20 @@
+name: Transit data pipeline
+on:
+  push:
+    paths:
+      - '.github/workflows/data-pipeline.yml'
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download test file
+        run: |
+          mkdir -p out
+          curl -L --fail --retry 3 https://www2.census.gov/geo/docs/maps-data/data/gazetteer/2024_Gazetteer/2024_Gaz_tracts_national.zip -o out/test.zip
+          ls -lh out/test.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: transit-data-test
+          path: out/test.zip
+          compression-level: 0
