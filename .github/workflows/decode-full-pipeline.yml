@@ -9,32 +9,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Decode and normalize analysis source
+      - name: Decode and verify analysis source package
         run: |
-          mkdir -p out
-          cat pipeline/full_pipeline.part.* | base64 -d | gzip -d > out/full_pipeline.raw
-          file out/full_pipeline.raw || true
-          xxd -l 96 out/full_pipeline.raw || true
-          python - <<'PY'
-          from pathlib import Path
-          raw=Path('out/full_pipeline.raw').read_bytes()
-          candidates=['utf-8-sig','utf-16','utf-16-le','utf-16-be']
-          for enc in candidates:
-              try:
-                  text=raw.decode(enc)
-                  compile(text,'full_pipeline.py','exec')
-                  Path('out/full_pipeline.py').write_text(text,encoding='utf-8')
-                  print('decoded',enc,'chars',len(text))
-                  break
-              except Exception as e:
-                  print(enc,type(e).__name__,e)
-          else:
-              raise SystemExit('No valid source encoding')
-          PY
-          python -m py_compile out/full_pipeline.py
-          wc -c out/full_pipeline.py
+          mkdir -p out/source
+          cat pipeline/full_pipeline.part.00 pipeline/full_pipeline.part.01 pipeline/full_pipeline.part.02 | base64 --decode > /tmp/full_pipeline.tar.gz
+          echo 'b085883d03d1a3144f4d5cf9b016371f6d3495a0c893c8d07fe138ce9973c60a  /tmp/full_pipeline.tar.gz' | sha256sum -c -
+          tar -xzf /tmp/full_pipeline.tar.gz -C out/source
+          python -m py_compile out/source/prepare_inputs.py out/source/aggregate_outputs.py
+          find out/source -maxdepth 1 -type f -printf '%f\t%s\n' | sort
       - uses: actions/upload-artifact@v4
         with:
           name: decoded-accessibility-analysis-source
-          path: out/full_pipeline.py
+          path: out/source/
           compression-level: 6
