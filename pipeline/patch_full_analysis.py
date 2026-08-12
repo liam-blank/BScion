@@ -164,4 +164,5 @@ if old not in m:
     raise RuntimeError('frequent-bus patch target missing')
 metrics.write_text(m.replace(old, new))
 
+# Production rerun marker: authoritative ACS summary files and pedestrian-network corrections verified.
 print('Applied ACS summary-file, pedestrian-network, connector, and frequent-service corrections.')
