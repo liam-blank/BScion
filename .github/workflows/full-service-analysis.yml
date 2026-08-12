@@ -4,6 +4,7 @@ on:
     paths:
       - '.github/workflows/full-service-analysis.yml'
       - 'pipeline/full_pipeline.part.*'
+      - 'pipeline/patch_full_analysis.py'
   workflow_dispatch:
 permissions:
   contents: read
@@ -22,23 +23,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Decode, patch, and verify analysis source
+      - name: Decode, correct, and verify analysis source
         run: |
           mkdir -p pipeline/full_analysis
           cat pipeline/full_pipeline.part.00 pipeline/full_pipeline.part.01 pipeline/full_pipeline.part.02 | base64 --decode > /tmp/full_pipeline.tar.gz
           echo 'b085883d03d1a3144f4d5cf9b016371f6d3495a0c893c8d07fe138ce9973c60a  /tmp/full_pipeline.tar.gz' | sha256sum -c -
           tar -xzf /tmp/full_pipeline.tar.gz -C pipeline/full_analysis
-          python - <<'PY'
-          from pathlib import Path
-          p = Path('pipeline/full_analysis/prepare_inputs.py')
-          s = p.read_text()
-          old = 'https://api.census.gov/data/2024/acs/acs5?get=NAME,B01003_001E,B11001_001E&for=tract:*&in=state:34'
-          new = 'https://api.census.gov/data/2024/acs/acs5?get=NAME,B01003_001E,B11001_001E&for=tract:*&in=state:34%20county:*'
-          if old not in s:
-              raise SystemExit('Expected ACS URL not found')
-          p.write_text(s.replace(old, new, 1))
-          PY
+          python pipeline/patch_full_analysis.py
           python -m py_compile pipeline/full_analysis/prepare_inputs.py pipeline/full_analysis/aggregate_outputs.py
+          g++ -std=c++17 -fsyntax-only pipeline/full_analysis/router.cpp
+          g++ -std=c++17 -fsyntax-only pipeline/full_analysis/metrics.cpp
       - name: Install geospatial and schedule environment
         run: |
           python -m pip install --upgrade pip
@@ -64,7 +58,7 @@ jobs:
         if: always()
         run: |
           mkdir -p out/reproducibility
-          cp pipeline/full_analysis/prepare_inputs.py pipeline/full_analysis/aggregate_outputs.py pipeline/full_analysis/router.cpp pipeline/full_analysis/metrics.cpp out/reproducibility/ || true
+          cp pipeline/full_analysis/prepare_inputs.py pipeline/full_analysis/aggregate_outputs.py pipeline/full_analysis/router.cpp pipeline/full_analysis/metrics.cpp pipeline/patch_full_analysis.py out/reproducibility/ || true
           cp requirements-effective.txt out/reproducibility/ || true
           printf '%s\n' 'Python 3.11; GNU C++17; OpenMP; representative Tuesday 2026-08-18; representative Saturday 2026-08-22.' > out/reproducibility/ENVIRONMENT.txt
           find out -type f -print0 | sort -z | xargs -0 sha256sum > out/SHA256SUMS.txt || true
