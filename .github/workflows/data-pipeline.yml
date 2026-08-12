@@ -39,7 +39,20 @@ jobs:
           python -m pip install 'numpy<2' 'pandas<3' 'scipy<2' 'shapely>=2.0' 'pyproj>=3.6' 'geopandas>=1.0' 'pyogrio>=0.10' 'pyarrow>=15' 'pyrosm==0.13.1' 'pyroaring>=1.0'
       - name: Restore production source
         run: |
-          base64 -d pipeline/build_accessibility_production.py.gz.b64 | gzip -d > pipeline/build_accessibility_production.py
+          python - <<'PY'
+          from pathlib import Path
+          import base64, gzip, re
+          source = Path('pipeline/build_accessibility_production.py.gz.b64')
+          text = source.read_text(encoding='ascii', errors='ignore')
+          clean = ''.join(re.findall(r'[A-Za-z0-9+/=]', text)).rstrip('=')
+          clean += '=' * ((4 - len(clean) % 4) % 4)
+          print({'stored_bytes': source.stat().st_size, 'base64_chars': len(clean)})
+          packed = base64.b64decode(clean, validate=False)
+          print({'gzip_bytes': len(packed), 'header': packed[:8].hex()})
+          restored = gzip.decompress(packed)
+          Path('pipeline/build_accessibility_production.py').write_bytes(restored)
+          print({'restored_bytes': len(restored)})
+          PY
           python -m py_compile pipeline/build_accessibility_production.py
       - name: Execute block-scale network accessibility analysis
         run: python pipeline/build_accessibility_production.py
