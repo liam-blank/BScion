@@ -7,11 +7,50 @@ metrics = root / 'metrics.cpp'
 
 s = prep.read_text()
 
-# Census tract requests require both the state and county geography clauses.
+# Census now requires an API key for ACS queries. Use the authoritative,
+# table-based 2024 ACS 5-year summary files, which remain publicly downloadable.
 s = s.replace(
     '"acs": "https://api.census.gov/data/2024/acs/acs5?get=NAME,B01003_001E,B11001_001E&for=tract:*&in=state:34",',
-    '"acs": "https://api.census.gov/data/2024/acs/acs5?get=NAME%2CB01003_001E%2CB11001_001E&for=tract%3A%2A&in=state%3A34&in=county%3A%2A",'
+    '"acs_population": "https://www2.census.gov/programs-surveys/acs/summary_file/2024/table-based-SF/data/5YRData/acsdt5y2024-b01003.dat",\n    "acs_households": "https://www2.census.gov/programs-surveys/acs/summary_file/2024/table-based-SF/data/5YRData/acsdt5y2024-b11001.dat",'
 )
+
+old_acs = '''    # ACS tract controls.
+    acs_path = DATA / "acs_2024_tracts.json"
+    if not acs_path.exists():
+        rec = download(SOURCE_URLS["acs"], acs_path)
+        rec["dataset"] = "acs_2024_tracts"
+        source_records.append(rec)
+    acs_raw = json.loads(acs_path.read_text())
+    acs = pd.DataFrame(acs_raw[1:], columns=acs_raw[0])
+    acs["GEOID"] = acs["state"].astype(str) + acs["county"].astype(str) + acs["tract"].astype(str)
+    acs["pop_2024"] = pd.to_numeric(acs["B01003_001E"], errors="coerce").fillna(0)
+    acs["households_2024"] = pd.to_numeric(acs["B11001_001E"], errors="coerce").fillna(0)
+    acs = acs[["GEOID", "NAME", "pop_2024", "households_2024"]]
+'''
+new_acs = '''    # ACS tract controls from the keyless, table-based 2024 ACS 5-year Summary File.
+    acs_pop_path = DATA / "acsdt5y2024-b01003.dat"
+    acs_hh_path = DATA / "acsdt5y2024-b11001.dat"
+    for dataset, key, path in (("acs_2024_population", "acs_population", acs_pop_path), ("acs_2024_households", "acs_households", acs_hh_path)):
+        rec = download(SOURCE_URLS[key], path)
+        rec["dataset"] = dataset
+        source_records.append(rec)
+    pop_sf = pd.read_csv(acs_pop_path, sep="|", dtype={"GEO_ID": str}, usecols=["GEO_ID", "B01003_E001"])
+    hh_sf = pd.read_csv(acs_hh_path, sep="|", dtype={"GEO_ID": str}, usecols=["GEO_ID", "B11001_E001"])
+    pop_sf = pop_sf[pop_sf["GEO_ID"].str.startswith("1400000US34", na=False)].copy()
+    hh_sf = hh_sf[hh_sf["GEO_ID"].str.startswith("1400000US34", na=False)].copy()
+    pop_sf["GEOID"] = pop_sf["GEO_ID"].str[-11:]
+    hh_sf["GEOID"] = hh_sf["GEO_ID"].str[-11:]
+    acs = pop_sf[["GEOID", "B01003_E001"]].merge(hh_sf[["GEOID", "B11001_E001"]], on="GEOID", how="outer")
+    acs["pop_2024"] = pd.to_numeric(acs["B01003_E001"], errors="coerce").fillna(0)
+    acs["households_2024"] = pd.to_numeric(acs["B11001_E001"], errors="coerce").fillna(0)
+    county_names = {"001":"Atlantic","003":"Bergen","005":"Burlington","007":"Camden","009":"Cape May","011":"Cumberland","013":"Essex","015":"Gloucester","017":"Hudson","019":"Hunterdon","021":"Mercer","023":"Middlesex","025":"Monmouth","027":"Morris","029":"Ocean","031":"Passaic","033":"Salem","035":"Somerset","037":"Sussex","039":"Union","041":"Warren"}
+    acs["NAME"] = "Census Tract " + acs["GEOID"].str[-6:] + ", " + acs["GEOID"].str[2:5].map(county_names).fillna("Unknown") + " County, New Jersey"
+    acs = acs[["GEOID", "NAME", "pop_2024", "households_2024"]]
+'''
+if old_acs not in s:
+    raise RuntimeError('ACS-control patch target missing')
+s = s.replace(old_acs, new_acs)
+
 s = s.replace('MAX_STOP_SNAP_M = 300.0\n', 'MAX_STOP_SNAP_M = 300.0\nMAX_BUS_STOP_SNAP_M = 100.0\n')
 
 old = '''    origins = blocks[(blocks["scaled_pop_2024"] > 0) | (blocks["jobs_2023"] > 0)].copy()
@@ -125,4 +164,4 @@ if old not in m:
     raise RuntimeError('frequent-bus patch target missing')
 metrics.write_text(m.replace(old, new))
 
-print('Applied Census, pedestrian-network, connector, and frequent-service corrections.')
+print('Applied ACS summary-file, pedestrian-network, connector, and frequent-service corrections.')
