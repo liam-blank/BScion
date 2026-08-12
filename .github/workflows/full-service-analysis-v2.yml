@@ -51,8 +51,13 @@ jobs:
           counties=['001','003','005','007','009','011','013','015','017','019','021','023','025','027','029','031','033','035','037','039','041']
           header=None; rows=[]
           for county in counties:
-              r=requests.get('https://api.census.gov/data/2024/acs/acs5',params={'get':'NAME,B01003_001E,B11001_001E','for':'tract:*','in':f'state:34 county:{county}'},timeout=120,headers={'User-Agent':'New-Jersey-Transit-Score-Accessibility/1.0'})
-              r.raise_for_status(); data=r.json()
+              params=[('get','NAME,B01003_001E,B11001_001E'),('for','tract:*'),('in','state:34'),('in',f'county:{county}')]
+              r=requests.get('https://api.census.gov/data/2024/acs/acs5',params=params,timeout=120,headers={'User-Agent':'New-Jersey-Transit-Score-Accessibility/1.0'})
+              r.raise_for_status()
+              try:
+                  data=r.json()
+              except Exception as exc:
+                  raise RuntimeError(f'ACS returned non-JSON for county {county}: {r.text[:500]}') from exc
               if header is None: header=data[0]
               elif data[0]!=header: raise RuntimeError('ACS schema changed')
               rows.extend(data[1:])
