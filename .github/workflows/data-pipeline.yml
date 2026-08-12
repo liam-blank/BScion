@@ -1,36 +1,43 @@
-name: New Jersey accessible-service production
+name: New Jersey transit accessibility production build
 on:
-  workflow_dispatch:
   push:
+    branches:
+      - accessible-service-final-20260812
     paths:
       - '.github/workflows/data-pipeline.yml'
+      - 'pipeline/patch_full_analysis.py'
+      - 'pipeline/full_pipeline.part.00'
+      - 'pipeline/full_pipeline.part.01'
+      - 'pipeline/full_pipeline.part.02'
+  workflow_dispatch:
 permissions:
-  contents: write
+  contents: read
   actions: read
 jobs:
-  accessible-service:
+  production-analysis:
     runs-on: ubuntu-latest
     timeout-minutes: 360
     env:
-      MPLBACKEND: Agg
       OMP_NUM_THREADS: '4'
-      OPENBLAS_NUM_THREADS: '2'
-      MKL_NUM_THREADS: '2'
+      PYTHONUNBUFFERED: '1'
+      MPLBACKEND: Agg
     steps:
       - uses: actions/checkout@v4
-      - name: Record run
+      - name: Record production run metadata
         run: |
-          printf '{"run_id": "%s", "run_attempt": "%s", "sha": "%s", "started_at": "%s", "stage": "accessible_service_production_v7_authoritative"}\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$GITHUB_SHA" "$(date -u +%FT%TZ)" > run_state.json
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git pull --rebase
-          git add run_state.json
-          git commit -m "Record accessible-service production run $GITHUB_RUN_ID" || true
-          git push
+          mkdir -p out
+          printf '{"run_id":"%s","run_attempt":"%s","sha":"%s","started_at":"%s","stage":"accessible_service_production"}\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$GITHUB_SHA" "$(date -u +%FT%TZ)" > out/service_gap_run_state.json
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Decode, patch, and verify production source
+      - name: Install geospatial and analytical dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++ libspatialindex-dev
+          python -m pip install --upgrade pip setuptools wheel
+          python -m pip install 'numpy<2' 'pandas<3' 'scipy<2' 'shapely>=2.0' 'pyproj>=3.6' 'geopandas>=1.0' 'pyogrio>=0.10' 'pyarrow>=15' 'pyrosm==0.13.1' 'pyroaring>=1.0'
+          python -m pip freeze > out/requirements-effective.txt
+      - name: Restore, patch, and verify production source
         run: |
           rm -rf pipeline/full_analysis
           mkdir -p pipeline/full_analysis
@@ -39,12 +46,7 @@ jobs:
           tar -xzf /tmp/full_pipeline.tar.gz -C pipeline/full_analysis
           python pipeline/patch_full_analysis.py
           python -m py_compile pipeline/full_analysis/prepare_inputs.py pipeline/full_analysis/aggregate_outputs.py
-      - name: Install geospatial and schedule environment
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install 'numpy<2.1' pandas scipy requests shapely pyproj pyogrio geopandas pyarrow pyrosm matplotlib
-          python -m pip freeze > requirements-effective.txt
-      - name: Download, validate, and prepare public inputs
+      - name: Download, validate, and prepare authoritative public inputs
         run: python pipeline/full_analysis/prepare_inputs.py
       - name: Build pedestrian-network reachability
         run: |
@@ -63,9 +65,10 @@ jobs:
       - name: Preserve reproducibility and audit files
         if: always()
         run: |
-          mkdir -p out/reproducibility
-          cp pipeline/full_analysis/prepare_inputs.py pipeline/full_analysis/aggregate_outputs.py pipeline/full_analysis/router.cpp pipeline/full_analysis/metrics.cpp pipeline/patch_full_analysis.py requirements-effective.txt out/reproducibility/ || true
+          mkdir -p out/reproducibility out/audit_intermediates
+          cp pipeline/full_analysis/prepare_inputs.py pipeline/full_analysis/aggregate_outputs.py pipeline/full_analysis/router.cpp pipeline/full_analysis/metrics.cpp pipeline/patch_full_analysis.py out/reproducibility/ || true
           printf '%s\n' 'Python 3.11; GNU C++17; OpenMP; representative Tuesday 2026-08-18; representative Saturday 2026-08-22.' > out/reproducibility/ENVIRONMENT.txt
+          for f in work/intermediate/acs_2024_tracts.csv work/intermediate/origins.csv work/intermediate/stops.csv work/intermediate/metrics_qa_pairs.csv; do test -f "$f" && cp "$f" out/audit_intermediates/; done
           find out -type f -print0 | sort -z | xargs -0 sha256sum > out/SHA256SUMS.txt || true
           find out -type f -printf '%p\t%s\n' | sort > out/output_manifest.tsv || true
           df -h || true
@@ -73,7 +76,8 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: nj-transit-accessibility-service-gap-analysis-v7
+          name: nj-transit-accessibility-service-gap-analysis-final
           path: out/
+          if-no-files-found: warn
           compression-level: 6
-          retention-days: 30
+          retention-days: 90
