@@ -6,7 +6,7 @@ on:
       - 'pipeline/full_pipeline.part.*'
   workflow_dispatch:
 permissions:
-  contents: write
+  contents: read
   actions: read
 jobs:
   service-analysis:
@@ -19,18 +19,10 @@ jobs:
       MKL_NUM_THREADS: '2'
     steps:
       - uses: actions/checkout@v4
-      - name: Record production run
-        run: |
-          printf '{"run_id": "%s", "run_attempt": "%s", "sha": "%s", "started_at": "%s", "stage": "full_service_analysis"}\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$GITHUB_SHA" "$(date -u +%FT%TZ)" > run_state.json
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add run_state.json
-          git commit -m "Record full service analysis run $GITHUB_RUN_ID" || true
-          git push
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Decode and verify analysis source
+      - name: Decode, patch, and verify analysis source
         run: |
           mkdir -p pipeline/full_analysis
           cat pipeline/full_pipeline.part.00 pipeline/full_pipeline.part.01 pipeline/full_pipeline.part.02 | base64 --decode > /tmp/full_pipeline.tar.gz
@@ -41,10 +33,10 @@ jobs:
           p = Path('pipeline/full_analysis/prepare_inputs.py')
           s = p.read_text()
           old = 'https://api.census.gov/data/2024/acs/acs5?get=NAME,B01003_001E,B11001_001E&for=tract:*&in=state:34'
-          new = 'https://api.census.gov/data/2024/acs/acs5?get=NAME,B01003_001E,B11001_001E&for=tract:*&in=state:34&in=county:*'
+          new = old + '&in=county:*'
           if old not in s:
               raise SystemExit('Expected ACS URL not found')
-          p.write_text(s.replace(old, new))
+          p.write_text(s.replace(old, new, 1))
           PY
           python -m py_compile pipeline/full_analysis/prepare_inputs.py pipeline/full_analysis/aggregate_outputs.py
       - name: Install geospatial and schedule environment
@@ -86,3 +78,4 @@ jobs:
           path: out/
           compression-level: 6
           retention-days: 7
+# production run without repository-write side effects
