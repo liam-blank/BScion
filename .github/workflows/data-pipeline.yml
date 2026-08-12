@@ -35,7 +35,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y g++ libspatialindex-dev
           python -m pip install --upgrade pip setuptools wheel
-          python -m pip install 'numpy<2' 'pandas<3' 'scipy<2' 'shapely>=2.0' 'pyproj>=3.6' 'geopandas>=1.0' 'pyogrio>=0.10' 'pyarrow>=15' 'pyrosm==0.13.1' 'pyroaring>=1.0'
+          python -m pip install requests 'numpy<2' 'pandas<3' 'scipy<2' 'shapely>=2.0' 'pyproj>=3.6' 'geopandas>=1.0' 'pyogrio>=0.10' 'pyarrow>=15' 'pyrosm==0.13.1' 'pyroaring>=1.0'
           python -m pip freeze > out/requirements-effective.txt
       - name: Restore, patch, and verify production source
         run: |
