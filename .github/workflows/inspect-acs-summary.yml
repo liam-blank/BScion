@@ -1,0 +1,29 @@
+name: Inspect ACS table summary files
+on:
+  push:
+    paths:
+      - '.github/workflows/inspect-acs-summary.yml'
+  workflow_dispatch:
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Inspect data file headers
+        run: |
+          mkdir -p out
+          python - <<'PY'
+          import requests, pathlib
+          urls={
+            'b01003':'https://www2.census.gov/programs-surveys/acs/summary_file/2024/table-based-SF/data/5YRData/acsdt5y2024-b01003.dat',
+            'b11001':'https://www2.census.gov/programs-surveys/acs/summary_file/2024/table-based-SF/data/5YRData/acsdt5y2024-b11001.dat',
+          }
+          for name,url in urls.items():
+              r=requests.get(url,headers={'Range':'bytes=0-19999'},timeout=120)
+              print(name,r.status_code,len(r.content),r.headers.get('content-type'),r.headers.get('content-range'))
+              pathlib.Path(f'out/{name}_head.txt').write_bytes(r.content[:20000])
+          PY
+          for f in out/*; do echo ==== $f; head -5 "$f"; done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: acs-summary-inspection
+          path: out/
