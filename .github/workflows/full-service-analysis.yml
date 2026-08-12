@@ -6,7 +6,7 @@ on:
       - 'pipeline/full_pipeline.part.*'
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
   actions: read
 jobs:
   service-analysis:
@@ -19,6 +19,14 @@ jobs:
       MKL_NUM_THREADS: '2'
     steps:
       - uses: actions/checkout@v4
+      - name: Record production run
+        run: |
+          printf '{"run_id": "%s", "run_attempt": "%s", "sha": "%s", "started_at": "%s", "stage": "full_service_analysis"}\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$GITHUB_SHA" "$(date -u +%FT%TZ)" > run_state.json
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add run_state.json
+          git commit -m "Record full service analysis run $GITHUB_RUN_ID" || true
+          git push
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -68,4 +76,4 @@ jobs:
           path: out/
           compression-level: 6
           retention-days: 7
-# triggered 2026-08-12 for production run
+# production trigger with run-state tracking
