@@ -1,0 +1,28 @@
+name: Pandana New Jersey walking-network test
+on:
+  push:
+    paths:
+      - '.github/workflows/pandana-network-test.yml'
+      - 'pipeline/test_pandana_network.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install geospatial stack
+        run: pip install --upgrade pip && pip install pandas numpy pyarrow pyproj pyrosm pandana
+      - name: Build and query walking network
+        run: python pipeline/test_pandana_network.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pandana-network-test
+          path: out_pandana_test/
+          compression-level: 6
