@@ -33,12 +33,12 @@ jobs:
       - name: Build block, schedule, and network inputs
         env:
           OMP_NUM_THREADS: '4'
-        run: python pipeline/run_prepare_accessibility_v2.py
+        run: python pipeline/run_prepare_accessibility.py
       - name: Preserve analysis inputs and reproducibility files
         if: always()
         run: |
           mkdir -p out/reproducibility out/prepared
-          cp pipeline/feed_config.py pipeline/bounded_reach.cpp pipeline/run_prepare_accessibility.py pipeline/run_prepare_accessibility_v2.py pipeline/aggregate_accessibility.py requirements-effective.txt out/reproducibility/ || true
+          cp pipeline/feed_config.py pipeline/bounded_reach.cpp pipeline/run_prepare_accessibility.py pipeline/aggregate_accessibility.py requirements-effective.txt out/reproducibility/ || true
           for f in acs_2024_tracts.csv origins_all.parquet origins_connected.parquet stops_snapped.parquet calls_matched.parquet all_trips.parquet reachability.parquet; do
             test -f "work/full/prepared/$f" && cp "work/full/prepared/$f" out/prepared/
           done
