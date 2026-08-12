@@ -11,7 +11,7 @@ with urllib.request.urlopen(req,timeout=300) as r, open(p,'wb') as f:
         f.write(b)
 with zipfile.ZipFile(p) as z:
     names=z.namelist()
-    result={'names':names,'size':p.stat().st_size,'files':{}}
+    result={'names':names,'size':p.stat().st_size,'files':{},'selected_geo_records':{}}
     for name in names:
         if name.lower().endswith('.pl'):
             with z.open(name) as fh:
@@ -19,9 +19,16 @@ with zipfile.ZipFile(p) as z:
                 for _ in range(3):
                     raw=fh.readline()
                     if not raw: break
-                    s=raw.decode('latin-1').rstrip('\r\n')
-                    fields=s.split('|')
+                    s=raw.decode('latin-1').rstrip('\r\n'); fields=s.split('|')
                     lines.append({'length':len(s),'field_count':len(fields),'fields':fields[:20],'tail':fields[-10:]})
                 result['files'][name]=lines
+    with z.open('njgeo2020.pl') as fh:
+        for raw in fh:
+            s=raw.decode('latin-1').rstrip('\r\n'); fields=s.split('|')
+            if len(fields)<97: continue
+            sumlev=fields[2]
+            if sumlev in {'100','750'} and sumlev not in result['selected_geo_records']:
+                result['selected_geo_records'][sumlev]={'field_count':len(fields),'fields':fields,'tail':fields[-15:]}
+            if {'100','750'}.issubset(result['selected_geo_records']): break
     (out/'inspect.json').write_text(json.dumps(result,indent=2))
 print(json.dumps(result,indent=2))
