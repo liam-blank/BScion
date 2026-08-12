@@ -3,6 +3,7 @@
   "run_attempt": "1",
   "sha": "40f834cdd53cf2afc8bba41b5dd252267c291d19",
   "branch": "transit-service-gap-production-20260812",
-  "status": "running",
-  "started_at": "2026-08-12T16:46:27.409423+00:00"
+  "status": "success",
+  "started_at": "2026-08-12T16:46:27.409423+00:00",
+  "finished_at": "2026-08-12T16:47:59.935614+00:00"
 }
