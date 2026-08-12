@@ -1,0 +1,58 @@
+work/prepare_accessibility_effective.py:255: UserWarning: Geometry is in a geographic CRS. Results from 'length' are likely incorrect. Use 'GeoSeries.to_crs()' to re-project geometries to a projected CRS before this operation.
+
+  ok &= pd.to_numeric(edges.length,errors='coerce').fillna(0)>0
+sources=16253 threads=4 output=work/full/prepared/reach.bin
+{
+  "feeds": 24,
+  "calls": 1305728,
+  "origins": 116185,
+  "reach_pairs": 1176082,
+  "retrieved_at": "2026-08-12T17:25:50.979014+00:00",
+  "osm_url": "https://download.geofabrik.de/north-america/us/new-jersey-latest.osm.pbf",
+  "osm_sha256": "d8c6d17e28f3ee3a0353a213d6d40dff888a3a087610b5c4a155888c893300f0",
+  "raw_nodes": 5041315,
+  "filtered_edges": 5340958,
+  "directed_arcs": 10681916,
+  "origin_count": 117584,
+  "connected_origins": 116185,
+  "external_connector_origins": 873,
+  "active_stops": 34866,
+  "matched_active_stops": 17938,
+  "unique_stop_nodes": 16253,
+  "reachability_pairs": 1176082
+}
+{
+  "generated_at": "2026-08-12T17:28:06.687173+00:00",
+  "representative_weekday": "2026-08-18",
+  "representative_saturday": "2026-08-22",
+  "tracts": 2181,
+  "blocks_total": 137972,
+  "origin_blocks": 117584,
+  "connected_origin_blocks": 116185,
+  "acs_population_total": 9343809.0,
+  "scaled_block_population_total": 9343809.0,
+  "max_absolute_tract_population_reconciliation_error": 1.8189894035458565e-12,
+  "lodes_jobs_total": 4162765.0,
+  "origin_jobs_total": 4162765.0,
+  "max_absolute_tract_jobs_reconciliation_error": 0.0,
+  "included_feeds": 16,
+  "excluded_feeds": 8,
+  "active_stops": 34992,
+  "matched_stops": 17938,
+  "unmatched_stops": 17054,
+  "disconnected_origin_blocks": 1399,
+  "disconnected_population": 83923.03361117787,
+  "disconnected_jobs": 18536.0,
+  "validation_locations": 22,
+  "schedule_checks_passed": 22,
+  "primary_walk_thresholds_m": {
+    "bus": 400,
+    "rail_light_rail_rapid_transit_ferry": 800
+  },
+  "sensitivity_walk_thresholds_m": {
+    "bus": 800,
+    "rail_light_rail_rapid_transit_ferry": 1200
+  },
+  "frequency_convention": "A useful service hour contains at least 4, 2, or 1 unique reachable vehicle trips for the 15-, 30-, or 60-minute threshold. Coverage indicates at least one qualifying hour; frequent-bus access requires six qualifying 15-minute-equivalent weekday hours.",
+  "service_gap_definition": "statewide percentile of the two-factor Transit Score minus statewide percentile of log1p population-weighted unique reachable weekday departures."
+}
