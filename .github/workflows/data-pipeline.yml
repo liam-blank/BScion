@@ -4,7 +4,6 @@ on:
   push:
     paths:
       - '.github/workflows/data-pipeline.yml'
-      - 'pipeline/run_production.py'
 permissions:
   contents: write
   actions: read
@@ -12,44 +11,69 @@ jobs:
   accessible-service:
     runs-on: ubuntu-latest
     timeout-minutes: 360
+    env:
+      MPLBACKEND: Agg
+      OMP_NUM_THREADS: '4'
+      OPENBLAS_NUM_THREADS: '2'
+      MKL_NUM_THREADS: '2'
     steps:
       - uses: actions/checkout@v4
       - name: Record run
         run: |
-          printf '{"run_id": "%s", "run_attempt": "%s", "sha": "%s", "started_at": "%s", "stage": "accessible_service_production_v6"}\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$GITHUB_SHA" "$(date -u +%FT%TZ)" > run_state.json
+          printf '{"run_id": "%s", "run_attempt": "%s", "sha": "%s", "started_at": "%s", "stage": "accessible_service_production_v7_authoritative"}\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$GITHUB_SHA" "$(date -u +%FT%TZ)" > run_state.json
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git pull --rebase
           git add run_state.json
           git commit -m "Record accessible-service production run $GITHUB_RUN_ID" || true
           git push
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install geospatial analysis environment
+      - name: Decode, patch, and verify production source
+        run: |
+          rm -rf pipeline/full_analysis
+          mkdir -p pipeline/full_analysis
+          cat pipeline/full_pipeline.part.00 pipeline/full_pipeline.part.01 pipeline/full_pipeline.part.02 | base64 --decode > /tmp/full_pipeline.tar.gz
+          echo 'b085883d03d1a3144f4d5cf9b016371f6d3495a0c893c8d07fe138ce9973c60a  /tmp/full_pipeline.tar.gz' | sha256sum -c -
+          tar -xzf /tmp/full_pipeline.tar.gz -C pipeline/full_analysis
+          python pipeline/patch_full_analysis.py
+          python -m py_compile pipeline/full_analysis/prepare_inputs.py pipeline/full_analysis/aggregate_outputs.py
+      - name: Install geospatial and schedule environment
         run: |
           python -m pip install --upgrade pip
-          python -m pip install 'numpy<2.1' pandas pyarrow scipy shapely pyproj pyogrio geopandas pyrosm duckdb matplotlib
+          python -m pip install 'numpy<2.1' pandas scipy requests shapely pyproj pyogrio geopandas pyarrow pyrosm matplotlib
           python -m pip freeze > requirements-effective.txt
-      - name: Execute block-scale pedestrian-access and scheduled-service analysis
-        env:
-          OMP_NUM_THREADS: '4'
-        run: python pipeline/run_production.py
+      - name: Download, validate, and prepare public inputs
+        run: python pipeline/full_analysis/prepare_inputs.py
+      - name: Build pedestrian-network reachability
+        run: |
+          g++ -O3 -std=c++17 -fopenmp pipeline/full_analysis/router.cpp -o /tmp/router
+          NODE_COUNT=$(cat work/intermediate/node_count.txt)
+          /tmp/router work/intermediate/edges.bin work/intermediate/origins.bin work/intermediate/stops.bin "$NODE_COUNT" 1200 work/intermediate/pairs 4
+          cat work/intermediate/pairs_0.tsv work/intermediate/pairs_1.tsv work/intermediate/pairs_2.tsv work/intermediate/pairs_3.tsv | LC_ALL=C sort --parallel=4 -S 50% -n -k1,1 -k2,2 > work/intermediate/pairs_sorted.tsv
+          wc -l work/intermediate/pairs_sorted.tsv
+      - name: Deduplicate trips and calculate block accessibility
+        run: |
+          g++ -O3 -std=c++17 pipeline/full_analysis/metrics.cpp -o /tmp/metrics
+          STOP_COUNT=$(cat work/intermediate/stop_count.txt)
+          /tmp/metrics work/intermediate/pairs_sorted.tsv work/intermediate/events.bin work/intermediate/trips.bin "$STOP_COUNT" work/intermediate/block_metrics.csv work/intermediate/metrics_qa_pairs.csv
+      - name: Aggregate to tracts, validate, and publish tables
+        run: python pipeline/full_analysis/aggregate_outputs.py
       - name: Preserve reproducibility and audit files
         if: always()
         run: |
-          mkdir -p out/reproducibility out/prepared-audit
-          cp pipeline/feed_config.py pipeline/bounded_reach.cpp pipeline/prepare_accessibility.py pipeline/run_prepare_accessibility.py pipeline/run_prepare_accessibility_v3.py pipeline/aggregate_accessibility.py pipeline/run_aggregate_accessibility.py pipeline/run_production.py requirements-effective.txt out/reproducibility/ || true
-          for f in acs_2024_tracts.csv origins_all.parquet origins_connected.parquet stops_snapped.parquet calls_matched.parquet all_trips.parquet reachability.parquet blocks_inputs.parquet; do
-            test -f "work/full/prepared/$f" && cp "work/full/prepared/$f" out/prepared-audit/
-          done
-          python --version > out/python-version.txt || true
-          df -h > out/disk-usage.txt || true
-          free -h > out/memory-usage.txt || true
-          find out -maxdepth 3 -type f -printf '%p %s\n' | sort > out/output_manifest.txt
+          mkdir -p out/reproducibility
+          cp pipeline/full_analysis/prepare_inputs.py pipeline/full_analysis/aggregate_outputs.py pipeline/full_analysis/router.cpp pipeline/full_analysis/metrics.cpp pipeline/patch_full_analysis.py requirements-effective.txt out/reproducibility/ || true
+          printf '%s\n' 'Python 3.11; GNU C++17; OpenMP; representative Tuesday 2026-08-18; representative Saturday 2026-08-22.' > out/reproducibility/ENVIRONMENT.txt
+          find out -type f -print0 | sort -z | xargs -0 sha256sum > out/SHA256SUMS.txt || true
+          find out -type f -printf '%p\t%s\n' | sort > out/output_manifest.tsv || true
+          df -h || true
+          du -sh work out || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: nj-accessible-service-production
+          name: nj-transit-accessibility-service-gap-analysis-v7
           path: out/
           compression-level: 6
-          retention-days: 90
+          retention-days: 30
