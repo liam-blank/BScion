@@ -36,6 +36,16 @@ jobs:
           cat pipeline/full_pipeline.part.00 pipeline/full_pipeline.part.01 pipeline/full_pipeline.part.02 | base64 --decode > /tmp/full_pipeline.tar.gz
           echo 'b085883d03d1a3144f4d5cf9b016371f6d3495a0c893c8d07fe138ce9973c60a  /tmp/full_pipeline.tar.gz' | sha256sum -c -
           tar -xzf /tmp/full_pipeline.tar.gz -C pipeline/full_analysis
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('pipeline/full_analysis/prepare_inputs.py')
+          s = p.read_text()
+          old = 'https://api.census.gov/data/2024/acs/acs5?get=NAME,B01003_001E,B11001_001E&for=tract:*&in=state:34'
+          new = 'https://api.census.gov/data/2024/acs/acs5?get=NAME,B01003_001E,B11001_001E&for=tract:*&in=state:34&in=county:*'
+          if old not in s:
+              raise SystemExit('Expected ACS URL not found')
+          p.write_text(s.replace(old, new))
+          PY
           python -m py_compile pipeline/full_analysis/prepare_inputs.py pipeline/full_analysis/aggregate_outputs.py
       - name: Install geospatial and schedule environment
         run: |
@@ -76,4 +86,3 @@ jobs:
           path: out/
           compression-level: 6
           retention-days: 7
-# production trigger with run-state tracking
