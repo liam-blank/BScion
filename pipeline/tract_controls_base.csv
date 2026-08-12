@@ -1,0 +1,2 @@
+GEOID,tract_name,county,pop_2024,households_2024,hh_zero_vehicle,hh_one_vehicle,workers16plus,transit_commuters,ts_current,band_current,ts_pct_current,ts_trend2050,band_trend2050,ts_pct_trend2050,ts_concentrated2050,band_concentrated2050,ts_pct_concentrated2050
+34015501501,Census Tract 5015.01,Gloucester,3536,1451,14,368,1314,20,15.773908056221975,Low,12.0,18.16597951035361,Low,12.367816091954024,17.944633682725133,Low,12.459770114942527
