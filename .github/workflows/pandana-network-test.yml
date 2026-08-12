@@ -18,10 +18,11 @@ jobs:
         with:
           python-version: '3.11'
       - name: Install geospatial stack
-        run: pip install --upgrade pip && pip install pandas numpy pyarrow pyproj pyrosm pandana
+        run: pip install --upgrade pip && pip install 'numpy<2' 'pandas<3' pyarrow pyproj pyrosm pandana
       - name: Build and query walking network
         run: python pipeline/test_pandana_network.py
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: pandana-network-test
           path: out_pandana_test/
