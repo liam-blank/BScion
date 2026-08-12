@@ -4,6 +4,7 @@ on:
     paths:
       - '.github/workflows/full-service-analysis-v2.yml'
       - 'pipeline/full_pipeline.part.*'
+      - 'pipeline/patch_full_analysis.py'
   workflow_dispatch:
 permissions:
   contents: write
@@ -31,40 +32,20 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Decode and verify analysis source
+      - name: Decode, patch, and verify analysis source
         run: |
+          rm -rf pipeline/full_analysis
           mkdir -p pipeline/full_analysis
           cat pipeline/full_pipeline.part.00 pipeline/full_pipeline.part.01 pipeline/full_pipeline.part.02 | base64 --decode > /tmp/full_pipeline.tar.gz
           echo 'b085883d03d1a3144f4d5cf9b016371f6d3495a0c893c8d07fe138ce9973c60a  /tmp/full_pipeline.tar.gz' | sha256sum -c -
           tar -xzf /tmp/full_pipeline.tar.gz -C pipeline/full_analysis
+          python pipeline/patch_full_analysis.py
           python -m py_compile pipeline/full_analysis/prepare_inputs.py pipeline/full_analysis/aggregate_outputs.py
       - name: Install geospatial and schedule environment
         run: |
           python -m pip install --upgrade pip
           python -m pip install 'numpy<2.1' pandas scipy requests shapely pyproj pyogrio geopandas pyarrow pyrosm matplotlib
           python -m pip freeze > requirements-effective.txt
-      - name: Build authoritative statewide ACS tract controls
-        run: |
-          mkdir -p work/data
-          python - <<'PY'
-          import json, requests
-          counties=['001','003','005','007','009','011','013','015','017','019','021','023','025','027','029','031','033','035','037','039','041']
-          header=None; rows=[]
-          for county in counties:
-              params=[('get','NAME,B01003_001E,B11001_001E'),('for','tract:*'),('in','state:34'),('in',f'county:{county}')]
-              r=requests.get('https://api.census.gov/data/2024/acs/acs5',params=params,timeout=120,headers={'User-Agent':'New-Jersey-Transit-Score-Accessibility/1.0'})
-              r.raise_for_status()
-              try:
-                  data=r.json()
-              except Exception as exc:
-                  raise RuntimeError(f'ACS returned non-JSON for county {county}: {r.text[:500]}') from exc
-              if header is None: header=data[0]
-              elif data[0]!=header: raise RuntimeError('ACS schema changed')
-              rows.extend(data[1:])
-          if len(rows)<2100: raise RuntimeError(f'Incomplete ACS tract response: {len(rows)}')
-          open('work/data/acs_2024_tracts.json','w').write(json.dumps([header]+rows))
-          print('ACS tracts',len(rows))
-          PY
       - name: Download, validate, and prepare public inputs
         run: python pipeline/full_analysis/prepare_inputs.py
       - name: Build network router and calculate reachable stops
@@ -85,7 +66,7 @@ jobs:
         if: always()
         run: |
           mkdir -p out/reproducibility
-          cp pipeline/full_analysis/prepare_inputs.py pipeline/full_analysis/aggregate_outputs.py pipeline/full_analysis/router.cpp pipeline/full_analysis/metrics.cpp out/reproducibility/ || true
+          cp pipeline/full_analysis/prepare_inputs.py pipeline/full_analysis/aggregate_outputs.py pipeline/full_analysis/router.cpp pipeline/full_analysis/metrics.cpp pipeline/patch_full_analysis.py out/reproducibility/ || true
           cp requirements-effective.txt out/reproducibility/ || true
           printf '%s\n' 'Python 3.11; GNU C++17; OpenMP; representative Tuesday 2026-08-18; representative Saturday 2026-08-22.' > out/reproducibility/ENVIRONMENT.txt
           find out -type f -print0 | sort -z | xargs -0 sha256sum > out/SHA256SUMS.txt || true
@@ -98,4 +79,4 @@ jobs:
           name: nj-transit-accessibility-service-gap-analysis-v2
           path: out/
           compression-level: 6
-          retention-days: 7
+          retention-days: 14
