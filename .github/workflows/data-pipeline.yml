@@ -1,34 +1,90 @@
-name: Transit data pipeline
+name: New Jersey Transit accessible-service production
+
 on:
   push:
+    branches:
+      - transit-service-gap-production-20260812
     paths:
       - '.github/workflows/data-pipeline.yml'
-      - 'pipeline/**'
+      - 'service_gap/**'
   workflow_dispatch:
+
 permissions:
-  contents: write
+  contents: read
   actions: read
+
 jobs:
-  fta-inventory:
+  accessible-service:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 350
+    env:
+      OMP_NUM_THREADS: '4'
+      OPENBLAS_NUM_THREADS: '2'
+      MKL_NUM_THREADS: '2'
+      MALLOC_ARENA_MAX: '2'
+      PYTHONUNBUFFERED: '1'
     steps:
       - uses: actions/checkout@v4
-      - name: Record run
+
+      - name: Configure additional memory
         run: |
-          printf '{"run_id": "%s", "run_attempt": "%s", "sha": "%s", "started_at": "%s", "stage": "fta_inventory"}\n' "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$GITHUB_SHA" "$(date -u +%FT%TZ)" > run_state.json
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add run_state.json
-          git commit -m "Record transit pipeline run $GITHUB_RUN_ID" || true
-          git push
+          sudo fallocate -l 6G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          free -h
+          df -h
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Inspect FTA GTFS inventory
-        run: python pipeline/inspect_fta.py
+          cache: 'pip'
+
+      - name: Install geospatial analysis environment
+        run: |
+          python -m pip install --upgrade pip wheel setuptools
+          python -m pip install \
+            'numpy>=1.26,<3' 'pandas>=2.2,<3' 'scipy>=1.13,<2' \
+            'geopandas>=1.0,<2' 'shapely>=2.0,<3' 'pyogrio>=0.10,<1' \
+            'pyarrow>=17,<21' 'pyproj>=3.6,<4' 'pyrosm>=0.6.2,<0.7' \
+            'matplotlib>=3.9,<4'
+          python - <<'PY'
+          import geopandas, pandas, numpy, scipy, pyrosm, shapely, pyarrow
+          print('environment ready', geopandas.__version__, pandas.__version__, numpy.__version__, scipy.__version__, pyrosm.__version__)
+          PY
+
+      - name: Build block-scale accessible-service and service-gap analysis
+        run: |
+          mkdir -p out/service_gap work/service_gap
+          /usr/bin/time -v python service_gap/run.py --work work/service_gap --out out/service_gap 2>&1 | tee out/service_gap/execution.log
+
+      - name: Package analysis outputs
+        if: always()
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib, json
+          root=Path('out/service_gap')
+          manifest=[]
+          if root.exists():
+            for p in sorted(root.rglob('*')):
+              if p.is_file():
+                h=hashlib.sha256(p.read_bytes()).hexdigest()
+                manifest.append({'file':str(p.relative_to(root)),'bytes':p.stat().st_size,'sha256':h})
+            (root/'artifact_manifest.json').write_text(json.dumps(manifest,indent=2))
+          PY
+          cd out
+          zip -r -9 ../New_Jersey_Accessible_Service_Analysis_Data.zip service_gap
+          cd ..
+          ls -lh New_Jersey_Accessible_Service_Analysis_Data.zip
+          df -h
+
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: fta-gtfs-inventory-inspection
-          path: out/
+          name: new-jersey-accessible-service-production-data
+          path: |
+            out/service_gap/
+            New_Jersey_Accessible_Service_Analysis_Data.zip
           compression-level: 6
+          retention-days: 14
