@@ -1,0 +1,31 @@
+name: Inspect official ACS table-based summary files
+on:
+  push:
+    paths:
+      - '.github/workflows/inspect-acs.yml'
+  workflow_dispatch:
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download official current ACS table files and inspect schema
+        run: |
+          mkdir -p out
+          base='https://www2.census.gov/programs-surveys/acs/summary_file/2024/table-based-SF/data/5YRData'
+          curl -L --fail --retry 4 "$base/acsdt5y2024-b01003.dat" -o out/b01003.dat
+          curl -L --fail --retry 4 "$base/acsdt5y2024-b11001.dat" -o out/b11001.dat
+          python - <<'PY'
+          from pathlib import Path
+          for p in [Path('out/b01003.dat'),Path('out/b11001.dat')]:
+              print('\n===',p,'bytes',p.stat().st_size)
+              b=p.read_bytes()[:5000]
+              print(b.decode('utf-8',errors='replace')[:4000])
+          PY
+          head -n 5 out/b01003.dat > out/b01003_sample.txt
+          head -n 5 out/b11001.dat > out/b11001_sample.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: acs-official-schema-samples
+          path: out/*sample.txt
