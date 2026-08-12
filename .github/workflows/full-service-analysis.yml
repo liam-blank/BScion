@@ -5,7 +5,6 @@ on:
       - '.github/workflows/full-service-analysis.yml'
       - 'pipeline/full_pipeline.part.*'
       - 'pipeline/patch_full_analysis.py'
-      - 'pipeline/patch_censusreporter.py'
   workflow_dispatch:
 permissions:
   contents: read
@@ -31,7 +30,6 @@ jobs:
           echo 'b085883d03d1a3144f4d5cf9b016371f6d3495a0c893c8d07fe138ce9973c60a  /tmp/full_pipeline.tar.gz' | sha256sum -c -
           tar -xzf /tmp/full_pipeline.tar.gz -C pipeline/full_analysis
           python pipeline/patch_full_analysis.py
-          python pipeline/patch_censusreporter.py
           python -m py_compile pipeline/full_analysis/prepare_inputs.py pipeline/full_analysis/aggregate_outputs.py
           g++ -std=c++17 -fsyntax-only pipeline/full_analysis/router.cpp
           g++ -std=c++17 -fsyntax-only pipeline/full_analysis/metrics.cpp
@@ -60,7 +58,7 @@ jobs:
         if: always()
         run: |
           mkdir -p out/reproducibility
-          cp pipeline/full_analysis/prepare_inputs.py pipeline/full_analysis/aggregate_outputs.py pipeline/full_analysis/router.cpp pipeline/full_analysis/metrics.cpp pipeline/patch_full_analysis.py pipeline/patch_censusreporter.py out/reproducibility/ || true
+          cp pipeline/full_analysis/prepare_inputs.py pipeline/full_analysis/aggregate_outputs.py pipeline/full_analysis/router.cpp pipeline/full_analysis/metrics.cpp pipeline/patch_full_analysis.py out/reproducibility/ || true
           cp requirements-effective.txt out/reproducibility/ || true
           printf '%s\n' 'Python 3.11; GNU C++17; OpenMP; representative Tuesday 2026-08-18; representative Saturday 2026-08-22.' > out/reproducibility/ENVIRONMENT.txt
           find out -type f -print0 | sort -z | xargs -0 sha256sum > out/SHA256SUMS.txt || true
