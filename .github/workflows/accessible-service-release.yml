@@ -1,0 +1,102 @@
+name: Accessible service public release
+
+on:
+  push:
+    branches: [transit-service-gap-production-20260812]
+    paths:
+      - '.github/workflows/accessible-service-release.yml'
+      - 'service_gap/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    env:
+      OMP_NUM_THREADS: '4'
+      OPENBLAS_NUM_THREADS: '2'
+      MKL_NUM_THREADS: '2'
+      MALLOC_ARENA_MAX: '2'
+      PYTHONUNBUFFERED: '1'
+      RELEASE_TAG: accessible-service-2026-08-12
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install geospatial environment
+        run: |
+          set -euxo pipefail
+          python -m pip install --upgrade pip wheel setuptools
+          python -m pip install \
+            'numpy>=1.26,<2.1' 'pandas>=2.2,<3' 'scipy>=1.13,<2' \
+            'geopandas>=1.0,<2' 'shapely>=2.0,<3' 'pyogrio>=0.10,<1' \
+            'pyarrow>=17' 'pyproj>=3.6,<4' 'pyrosm>=0.13,<0.14' \
+            'matplotlib>=3.9,<4' 'openpyxl>=3.1,<4' 'python-docx>=1.1,<2' \
+            'reportlab>=4.2,<5' 'requests>=2.32,<3'
+          free -h
+          df -h
+
+      - name: Execute statewide analysis
+        run: |
+          set -euxo pipefail
+          rm -rf out/service_gap work/service_gap
+          mkdir -p out/service_gap work/service_gap
+          /usr/bin/time -v python service_gap/run.py --work work/service_gap --out out/service_gap 2>&1 | tee out/service_gap/execution.log
+          test "$(find out/service_gap -type f | wc -l)" -ge 5
+
+      - name: Add reproducibility manifest
+        run: |
+          set -euxo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib, json, platform, subprocess, sys
+          root=Path('out/service_gap')
+          files=[]
+          for p in sorted(root.rglob('*')):
+            if p.is_file():
+              files.append({'file':str(p.relative_to(root)),'bytes':p.stat().st_size,'sha256':hashlib.sha256(p.read_bytes()).hexdigest()})
+          meta={
+            'git_sha': subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),
+            'python': sys.version,
+            'platform': platform.platform(),
+            'files': files,
+          }
+          (root/'artifact_manifest.json').write_text(json.dumps(meta,indent=2))
+          PY
+          cp service_gap/run.py out/service_gap/reproduction_entrypoint.py
+          mkdir -p out/service_gap/source_code_parts
+          cp service_gap/parts/*.txt out/service_gap/source_code_parts/
+          cd out
+          zip -r -9 ../New_Jersey_Accessible_Service_Analysis_Data.zip service_gap
+
+      - name: Publish release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euxo pipefail
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" New_Jersey_Accessible_Service_Analysis_Data.zip --clobber
+          else
+            gh release create "$RELEASE_TAG" New_Jersey_Accessible_Service_Analysis_Data.zip \
+              --title 'New Jersey Accessible Service Analysis - August 2026' \
+              --notes 'Block-scale pedestrian-network and GTFS analysis supporting the New Jersey Transit Score.'
+          fi
+          find out/service_gap -maxdepth 1 -type f -size -25M -print0 | while IFS= read -r -d '' f; do
+            gh release upload "$RELEASE_TAG" "$f" --clobber || true
+          done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: new-jersey-accessible-service-production-data
+          path: |
+            out/service_gap/
+            New_Jersey_Accessible_Service_Analysis_Data.zip
+          compression-level: 6
+          retention-days: 30
